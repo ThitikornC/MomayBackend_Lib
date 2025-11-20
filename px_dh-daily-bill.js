@@ -350,14 +350,8 @@ app.get('/daily-energy', async (req, res) => {
       return v === 0 ? null : v;
     };
 
-    const toUTC7 = (date) => {
-      const utc7 = new Date(date);
-      utc7.setHours(utc7.getHours() + 7);
-      return utc7;
-    };
-
-    const airSeries = airDocsRaw.map(d => ({ timestamp: toUTC7(d.timestamp), value: toValue(d) }));
-    const iraSeries = iraDocsRaw.map(d => ({ timestamp: toUTC7(d.timestamp), value: toValue(d) }));
+    const airSeries = airDocsRaw.map(d => ({ timestamp: d.timestamp, value: toValue(d) }));
+    const iraSeries = iraDocsRaw.map(d => ({ timestamp: d.timestamp, value: toValue(d) }));
 
     res.json({
       date: queryDate,
