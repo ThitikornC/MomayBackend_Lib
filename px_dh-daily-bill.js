@@ -577,7 +577,7 @@ app.get('/calendar', async (req, res) => {
       { $sort: { timestamp: 1 } },
       {
         $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } },
+          _id: { $dateToString: { format: "%Y-%m-%d", date: { $add: ["$timestamp", 7 * 60 * 60 * 1000] } } },
           powers: { $push: { $ifNull: ["$active_power_total", 0] } },
           timestamps: { $push: "$timestamp" }
         }
