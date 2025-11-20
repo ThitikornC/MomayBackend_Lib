@@ -406,7 +406,7 @@ app.get('/daily-energy/:source', async (req, res) => {
       if (d.timestamp) {
         const dateObj = new Date(d.timestamp);
         const fmt = new Intl.DateTimeFormat('sv-SE', {
-          timeZone: 'UTC',
+          timeZone: 'Asia/Bangkok',
           hour12: false,
           year: 'numeric', month: '2-digit', day: '2-digit',
           hour: '2-digit', minute: '2-digit', second: '2-digit'
@@ -563,21 +563,21 @@ app.get('/calendar', async (req, res) => {
   try {
     const now = new Date();
 
-    // กำหนดช่วงเวลาของเดือนปัจจุบัน
-    const start = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
-    const end = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 1));
+    // เดือนปัจจุบันและเดือนก่อนหน้า
+    const startPrev = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1));
+    const endCurrent = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 1));
 
     // Aggregation pipeline: group by local Thailand date and compute daily energy (kWh)
     const agg = await PM_airLib.aggregate([
       {
         $match: {
-          timestamp: { $gte: start, $lt: end }
+          timestamp: { $gte: startPrev, $lt: endCurrent }
         }
       },
       { $sort: { timestamp: 1 } },
       {
         $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: { $add: ["$timestamp", 7 * 60 * 60 * 1000] } } },
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } },
           powers: { $push: { $ifNull: ["$active_power_total", 0] } },
           timestamps: { $push: "$timestamp" }
         }
@@ -623,8 +623,6 @@ app.get('/calendar', async (req, res) => {
       { $sort: { "_id": 1 } }
     ]);
 
-    console.log("Aggregation Pipeline Result:", agg);
-
     // สร้าง events ตาม format เดิม
     const events = agg.flatMap(day => {
       const totalEnergyKwh = Number(day.totalEnergyKwh.toFixed(2));
@@ -648,7 +646,7 @@ app.get('/calendar', async (req, res) => {
 
   } catch (err) {
     console.error("❌ /calendar error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Failed to get calendar data", message: err.message });
   }
 });
 
@@ -1459,6 +1457,7 @@ app.get('/api/notifications/daily-diff', async (req, res) => {
       .skip(skip);
 
     const total = await DailyDiffNotificationH.countDocuments(query);
+    const unreadCount = await DailyDiffNotificationH.countDocuments({ read: false });
 
     res.json({
       success: true,
@@ -1470,7 +1469,7 @@ app.get('/api/notifications/daily-diff', async (req, res) => {
         limit: parseInt(limit),
         pages: Math.ceil(total / parseInt(limit))
       },
-      unreadCount: 0
+      unreadCount
     });
   } catch (err) {
     console.error('❌ GET /api/notifications/daily-diff error:', err);
@@ -1491,6 +1490,7 @@ app.get('/api/notifications/test', async (req, res) => {
       .skip(skip);
 
     const total = await TestNotificationH.countDocuments(query);
+    const unreadCount = await TestNotificationH.countDocuments({ read: false });
 
     res.json({
       success: true,
@@ -1502,7 +1502,7 @@ app.get('/api/notifications/test', async (req, res) => {
         limit: parseInt(limit),
         pages: Math.ceil(total / parseInt(limit))
       },
-      unreadCount: 0
+      unreadCount
     });
   } catch (err) {
     console.error('❌ GET /api/notifications/test error:', err);
@@ -1525,6 +1525,7 @@ app.get('/api/notifications/daily-bill', async (req, res) => {
       .skip(skip);
 
     const total = await DailyBillNotificationH.countDocuments(query);
+    const unreadCount = await DailyBillNotificationH.countDocuments({ read: false });
 
     res.json({
       success: true,
@@ -1536,7 +1537,7 @@ app.get('/api/notifications/daily-bill', async (req, res) => {
         limit: parseInt(limit),
         pages: Math.ceil(total / parseInt(limit))
       },
-      unreadCount: 0
+      unreadCount
     });
   } catch (err) {
     console.error('❌ GET /api/notifications/daily-bill error:', err);
@@ -1606,6 +1607,12 @@ app.get('/api/notifications/all', async (req, res) => {
     const totalTest = await TestNotificationH.countDocuments(query);
     const total = totalPeak + totalDailyDiff + totalDailyBill + totalTest;
 
+    const unreadPeak = await PeakNotificationH.countDocuments({ read: false });
+    const unreadDailyDiff = await DailyDiffNotificationH.countDocuments({ read: false });
+    const unreadDailyBill = await DailyBillNotificationH.countDocuments({ read: false });
+    const unreadTest = await TestNotificationH.countDocuments({ read: false });
+    const unreadCount = unreadPeak + unreadDailyDiff + unreadDailyBill + unreadTest;
+
     res.json({
       success: true,
       data: allNotifications,
@@ -1615,12 +1622,12 @@ app.get('/api/notifications/all', async (req, res) => {
         limit: parseInt(limit),
         pages: Math.ceil(total / parseInt(limit))
       },
-      unreadCount: 0,
+      unreadCount,
       breakdown: {
-        peak: { total: totalPeak, unread: 0 },
-        daily_diff: { total: totalDailyDiff, unread: 0 },
-        daily_bill: { total: totalDailyBill, unread: 0 },
-        test: { total: totalTest, unread: 0 }
+        peak: { total: totalPeak, unread: unreadPeak },
+        daily_diff: { total: totalDailyDiff, unread: unreadDailyDiff },
+        daily_bill: { total: totalDailyBill, unread: unreadDailyBill },
+        test: { total: totalTest, unread: unreadTest }
       }
     });
   } catch (err) {
@@ -1662,15 +1669,21 @@ app.get('/api/notifications/recent', async (req, res) => {
     ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
      .slice(0, parseInt(limit));
 
+    const unreadPeak = await PeakNotificationH.countDocuments({ read: false });
+    const unreadDailyDiff = await DailyDiffNotificationH.countDocuments({ read: false });
+    const unreadDailyBill = await DailyBillNotificationH.countDocuments({ read: false });
+    const unreadTest = await TestNotificationH.countDocuments({ read: false });
+    const unreadCount = unreadPeak + unreadDailyDiff + unreadDailyBill + unreadTest;
+
     res.json({
       success: true,
       data: allNotifications,
-      unreadCount: 0,
+      unreadCount,
       breakdown: {
-        peak: 0,
-        daily_diff: 0,
-        daily_bill: 0,
-        test: 0
+        peak: unreadPeak,
+        daily_diff: unreadDailyDiff,
+        daily_bill: unreadDailyBill,
+        test: unreadTest
       }
     });
   } catch (err) {
@@ -1878,8 +1891,6 @@ app.get('/api/notifications/stats', async (req, res) => {
     const totalDailyDiff = await DailyDiffNotification.countDocuments();
     const unreadDailyDiff = await DailyDiffNotification.countDocuments({ read: false });
     const latestDailyDiff = await DailyDiffNotification.findOne().sort({ timestamp: -1 });
-
-
 
     const totalDailyBill = await DailyBillNotification.countDocuments();
     const unreadDailyBill = await DailyBillNotification.countDocuments({ read: false });
