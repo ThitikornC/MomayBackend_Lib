@@ -350,8 +350,14 @@ app.get('/daily-energy', async (req, res) => {
       return v === 0 ? null : v;
     };
 
-    const airSeries = airDocsRaw.map(d => ({ timestamp: d.timestamp, value: toValue(d) }));
-    const iraSeries = iraDocsRaw.map(d => ({ timestamp: d.timestamp, value: toValue(d) }));
+    const toUTC7 = (date) => {
+      const utc7 = new Date(date);
+      utc7.setHours(utc7.getHours() + 7);
+      return utc7;
+    };
+
+    const airSeries = airDocsRaw.map(d => ({ timestamp: toUTC7(d.timestamp), value: toValue(d) }));
+    const iraSeries = iraDocsRaw.map(d => ({ timestamp: toUTC7(d.timestamp), value: toValue(d) }));
 
     res.json({
       date: queryDate,
@@ -563,20 +569,11 @@ app.get('/calendar', async (req, res) => {
   try {
     const now = new Date();
 
-    // เดือนปัจจุบันและเดือนก่อนหน้า
-    const startPrev = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1));
-    const endCurrent = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 1));
+    // กำหนดช่วงเวลาของเดือนปัจจุบัน
+    const start = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+    const end = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 1));
 
     // Aggregation pipeline: group by local Thailand date and compute daily energy (kWh)
-    // Ensure consistent use of active_power_total and adjust for +7 timezone
-    const queryDate = req.query.date || new Date().toISOString().slice(0,10); // YYYY-MM-DD
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(queryDate)) {
-      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
-    }
-
-    // Removed +7 timezone adjustment in aggregation
-    const { start, end } = getDayRangeUTC(queryDate);
-
     const agg = await PM_airLib.aggregate([
       {
         $match: {
@@ -632,7 +629,6 @@ app.get('/calendar', async (req, res) => {
       { $sort: { "_id": 1 } }
     ]);
 
-    console.log("Query Date:", queryDate);
     console.log("Aggregation Pipeline Result:", agg);
 
     // สร้าง events ตาม format เดิม
@@ -658,7 +654,7 @@ app.get('/calendar', async (req, res) => {
 
   } catch (err) {
     console.error("❌ /calendar error:", err);
-    res.status(500).json({ error: "Failed to get calendar data", message: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1888,6 +1884,8 @@ app.get('/api/notifications/stats', async (req, res) => {
     const totalDailyDiff = await DailyDiffNotification.countDocuments();
     const unreadDailyDiff = await DailyDiffNotification.countDocuments({ read: false });
     const latestDailyDiff = await DailyDiffNotification.findOne().sort({ timestamp: -1 });
+
+
 
     const totalDailyBill = await DailyBillNotification.countDocuments();
     const unreadDailyBill = await DailyBillNotification.countDocuments({ read: false });
