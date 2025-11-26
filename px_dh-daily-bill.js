@@ -15,15 +15,12 @@ if (!mongoUri) {
     process.exit(1);
 }
 
-mongoose.connect(mongoUri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => console.log('✅ Connected to MongoDB Atlas'))
-.catch(err => {
+mongoose.connect(mongoUri)
+  .then(() => console.log('✅ Connected to MongoDB Atlas'))
+  .catch(err => {
     console.error('❌ MongoDB connection error:', err);
     process.exit(1);
-});
+  });
 
 // ================= Schema =================
 const px_pm3250_schema = new mongoose.Schema({
