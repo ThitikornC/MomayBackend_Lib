@@ -1174,12 +1174,22 @@ async function sendPushNotification(title, body, type = 'test', data = {}) {
   try {
     let notification;
 
+    // Ensure body is a string (for Mongoose schema)
+    let bodyStr = body;
+    if (typeof body !== 'string') {
+      try {
+        bodyStr = JSON.stringify(body);
+      } catch (e) {
+        bodyStr = String(body);
+      }
+    }
+
     // 1. บันทึกลง Database แยกตาม type
     switch(type) {
       case 'peak':
         notification = await PeakNotificationH.create({
           title,
-          body,
+          body: bodyStr,
           power: data.power
         });
         console.log('💾 Peak Notification saved:', notification._id);
@@ -1188,7 +1198,7 @@ async function sendPushNotification(title, body, type = 'test', data = {}) {
       case 'daily_diff':
         notification = await DailyDiffNotificationH.create({
           title,
-          body,
+          body: bodyStr,
           yesterday: data.yesterday,
           dayBefore: data.dayBefore,
           diff: data.diff
@@ -1199,7 +1209,7 @@ async function sendPushNotification(title, body, type = 'test', data = {}) {
       case 'daily_bill':
         notification = await DailyBillNotificationH.create({
           title,
-          body,
+          body: bodyStr,
           date: data.date,
           energy_kwh: data.energy_kwh,
           electricity_bill: data.electricity_bill,
@@ -1212,7 +1222,7 @@ async function sendPushNotification(title, body, type = 'test', data = {}) {
       case 'test':
         notification = await TestNotificationH.create({
           title,
-          body
+          body: bodyStr
         });
         console.log('💾 Test Notification saved:', notification._id);
         break;
